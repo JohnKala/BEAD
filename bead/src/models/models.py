@@ -1060,3 +1060,106 @@ class TransformerAE(nn.Module):
         z = self.encoder(x)
         x = self.decoder(z)
         return x, z, z, z, z, z
+
+
+
+# === Custom Model Added by Ioannis Kalaitzidis: ResidualConvVAE ===
+class ResidualConvVAE(ConvVAE):
+    """
+    Variational auto-encoder with residual connections in both encoder and decoder.
+    This model adds skip connections that help preserve information through the network,
+    potentially improving reconstruction quality.
+    """
+
+    def __init__(self, in_shape, z_dim, *args, **kwargs):
+        super().__init__(in_shape, z_dim, *args, **kwargs)
+        
+        # Add residual layers
+        self.res_enc_1 = nn.Sequential(
+            nn.Conv2d(32, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.LeakyReLU()
+        )
+        
+        self.res_enc_2 = nn.Sequential(
+            nn.Conv2d(16, 16, kernel_size=3, padding=1),
+            nn.BatchNorm2d(16),
+            nn.LeakyReLU()
+        )
+        
+        self.res_dec_1 = nn.Sequential(
+            nn.ConvTranspose2d(16, 16, kernel_size=3, padding=1),
+            nn.BatchNorm2d(16),
+            nn.LeakyReLU()
+        )
+        
+        self.res_dec_2 = nn.Sequential(
+            nn.ConvTranspose2d(32, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.LeakyReLU()
+        )
+
+    def encode(self, x):
+        # Get first convolutional layer output
+        x = self.q_z_conv[0:3](x)  # Conv2d + BatchNorm2d + LeakyReLU
+        
+        # First residual connection
+        res1 = x
+        x = self.res_enc_1(x)
+        x = x + res1  # Residual connection
+        
+        # Continue with next conv layers
+        x = self.q_z_conv[3:6](x)  # Conv2d + BatchNorm2d + LeakyReLU
+        
+        # Second residual connection
+        res2 = x
+        x = self.res_enc_2(x)
+        x = x + res2  # Residual connection
+        
+        # Finish encoding
+        x = self.q_z_conv[6:8](x)  # Conv2d + BatchNorm2d
+        self.conv_op_shape = x.shape
+        
+        # Flatten and continue with dense layers
+        x = self.flatten(x)
+        x = self.q_z_lin(x)
+        
+        # Get latent parameters
+        mean = self.q_z_mean(x)
+        logvar = self.q_z_logvar(x)
+        
+        return x, mean, logvar
+
+    def decode(self, z):
+        # Dense layers
+        x = self.p_x_lin(z)
+        
+        # Reshape to match conv shape
+        x = x.view(self.conv_op_shape)
+        
+        # Initial deconv layers
+        x = self.p_x_conv[0:3](x)  # BatchNorm2d + ConvTranspose2d + BatchNorm2d + LeakyReLU
+        
+        # First residual connection in decoder
+        res1 = x
+        x = self.res_dec_1(x)
+        x = x + res1  # Residual connection
+        
+        # Continue with next deconv layers
+        x = self.p_x_conv[3:6](x)  # ConvTranspose2d + BatchNorm2d + LeakyReLU
+        
+        # Second residual connection in decoder
+        res2 = x
+        x = self.res_dec_2(x)
+        x = x + res2  # Residual connection
+        
+        # Final layer
+        x = self.p_x_conv[6:7](x)  # ConvTranspose2d
+        
+        return x
+
+    def forward(self, x):
+        out, mean, logvar = self.encode(x)
+        z = self.reparameterize(mean, logvar)
+        out = self.decode(z)
+        return out, mean, logvar, 0, z, z  # ldj = 0 (no flow)

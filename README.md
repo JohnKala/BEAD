@@ -26,7 +26,7 @@ BEAD has five main running modes:
 
 - Inference: Using a model trained on an enriched background, feed in samples you want to detect anomalies in and watch the magic happen.
 
-- Plotting: After running Inference, or Training you can generate plots similar towhat is shown in the paper. These include performance plots as well as different visualizations of the learned data.
+- Plotting: After running Inference, or Training you can generate plots similar to what is shown in the paper. These include performance plots as well as different visualizations of the learned data.
 
 - Diagnostics: Enabling this mode allows running profilers that measure a host of metrics connected to the usage of the compute node you run on to help you optimize the code if needed(using CPU-GPU metrics).
 
